@@ -60,8 +60,9 @@ button.small{padding:5px 10px;font-size:10.5px;}
 .msg.ok{background:#e7efe4;color:var(--green-deep);border:1px solid var(--green);}
 .msg.err{background:#f3e4e0;color:var(--red);border:1px solid var(--red);}
 
-table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:14px;display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;}
 table tr{display:table-row;}
+td:first-child{white-space:normal;overflow-wrap:break-word;word-break:break-word;}
 th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);}
 th{font-family:'IBM Plex Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink-soft);}
 td.num,th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
