@@ -162,6 +162,17 @@ footer{text-align:center;font-size:11px;color:var(--text-soft);margin-top:30px;}
       <button id="btn-cfg-save">Salvar e testar conexão</button>
       <button class="ghost" id="btn-cfg-clear" style="margin-left:8px;">Apagar configuração deste navegador</button>
     </div>
+    <div class="card">
+      <h2>🧪 Identificação por foto (experimental)</h2>
+      <p class="hint" style="margin-top:0;">Recurso em teste: usa a API gratuita do Google Gemini pra sugerir itens/quantidades a partir de uma foto. Precisão limitada — sempre confira antes de salvar. Chave fica só neste navegador (localStorage), nunca é enviada a lugar nenhum além do Google.</p>
+      <label>Chave de API do Gemini (aistudio.google.com → Get API key)</label>
+      <input type="text" id="ai-key" placeholder="AIza...">
+      <label>Modelo (nomes do Gemini mudam — confira o atual em aistudio.google.com se parar de funcionar)</label>
+      <input type="text" id="ai-model" placeholder="ex.: gemini-2.5-flash">
+      <div id="ai-cfg-msg"></div>
+      <button id="btn-ai-cfg-save">Salvar</button>
+      <button class="ghost" id="btn-ai-cfg-clear" style="margin-left:8px;">Apagar configuração</button>
+    </div>
   </div>
 
   <!-- ===================== HOJE ===================== -->
@@ -230,6 +241,17 @@ footer{text-align:center;font-size:11px;color:var(--text-soft);margin-top:30px;}
       <div id="msg-area"></div>
       <button id="btn-save">Adicionar ao diário</button>
     </div>
+    <div class="card" style="margin-top:16px;">
+      <h2>🧪 Identificar por foto (experimental)</h2>
+      <p class="hint" style="margin-top:0;">Sugestão automática via IA — sempre confira os valores antes de salvar. Requer chave configurada em ⚙.</p>
+      <label>Foto da refeição</label>
+      <input type="file" id="photo-input" accept="image/*" capture="environment">
+      <div id="photo-preview"></div>
+      <label>Instruções adicionais pra IA (opcional)</label>
+      <textarea id="ai-extra-instr" style="min-height:70px;" placeholder="Ex.: 'o arroz tinha óleo e alho', 'eram 2 unidades de pão de queijo', 'foi ontem à noite'"></textarea>
+      <button id="btn-ai-identify" class="ghost">Identificar com IA</button>
+      <div id="ai-identify-msg"></div>
+    </div>
   </div>
 
 </div>
@@ -250,6 +272,15 @@ function getGhConfig(){
 }
 function saveGhConfig(cfg){ localStorage.setItem(GH_CONFIG_KEY, JSON.stringify(cfg)); }
 function clearGhConfig(){ localStorage.removeItem(GH_CONFIG_KEY); }
+
+// ============ Identificação por foto (experimental, Gemini API) ============
+const AI_CONFIG_KEY = "diario_ai_config_v1";
+function getAiConfig(){
+  try{ return JSON.parse(localStorage.getItem(AI_CONFIG_KEY)); }
+  catch(e){ return null; }
+}
+function saveAiConfig(cfg){ localStorage.setItem(AI_CONFIG_KEY, JSON.stringify(cfg)); }
+function clearAiConfig(){ localStorage.removeItem(AI_CONFIG_KEY); }
 
 function b64EncodeUnicode(str){
   return btoa(encodeURIComponent(str).replace(/%([0-9A-F]{2})/g, (_,p1)=>String.fromCharCode(parseInt(p1,16))));
@@ -509,6 +540,31 @@ document.getElementById("btn-cfg-clear").addEventListener("click", ()=>{
   }
 })();
 
+document.getElementById("btn-ai-cfg-save").addEventListener("click", ()=>{
+  const key = document.getElementById("ai-key").value.trim();
+  const model = document.getElementById("ai-model").value.trim();
+  const msgEl = document.getElementById("ai-cfg-msg");
+  if(!key || !model){
+    msgEl.innerHTML = `<div class="msg err">Preencha a chave e o modelo.</div>`;
+    return;
+  }
+  saveAiConfig({key, model});
+  msgEl.innerHTML = `<div class="msg ok">Configuração salva.</div>`;
+});
+document.getElementById("btn-ai-cfg-clear").addEventListener("click", ()=>{
+  clearAiConfig();
+  document.getElementById("ai-key").value = "";
+  document.getElementById("ai-model").value = "";
+  document.getElementById("ai-cfg-msg").innerHTML = `<div class="msg ok">Configuração apagada deste navegador.</div>`;
+});
+(function initAiConfigFields(){
+  const cfg = getAiConfig();
+  if(cfg){
+    document.getElementById("ai-key").value = cfg.key||"";
+    document.getElementById("ai-model").value = cfg.model||"";
+  }
+})();
+
 document.getElementById("btn-preview").addEventListener("click", ()=>{
   try{ renderPreview(parseMeal()); }
   catch(e){ showMsg(e.message, "err"); }
@@ -547,6 +603,105 @@ function renderPreview(meal){
       </tr>
     </table>`;
 }
+
+// ---------- Identificação por foto (experimental, Gemini API) ----------
+let aiSelectedPhoto = null;
+
+document.getElementById("photo-input").addEventListener("change", (e)=>{
+  aiSelectedPhoto = e.target.files[0] || null;
+  const preview = document.getElementById("photo-preview");
+  if(aiSelectedPhoto){
+    const url = URL.createObjectURL(aiSelectedPhoto);
+    preview.innerHTML = `<img src="${url}" style="max-width:160px;max-height:160px;border-radius:var(--radius-md);margin:8px 0;display:block;">`;
+  }else{
+    preview.innerHTML = "";
+  }
+});
+
+function resizeImageToBase64(file, maxDim){
+  return new Promise((resolve, reject)=>{
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = ()=>{
+      let w = img.width, h = img.height;
+      if(w > maxDim || h > maxDim){
+        const scale = maxDim / Math.max(w, h);
+        w = Math.round(w*scale); h = Math.round(h*scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w; canvas.height = h;
+      canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL("image/jpeg", 0.85).split(",")[1]);
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error("Não foi possível ler a imagem.")); };
+    img.src = url;
+  });
+}
+
+function buildAiPrompt(extra){
+  const today = todayISO();
+  const now = new Date();
+  const hhmm = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  let p = `Você é um assistente de registro alimentar. Veja a foto e identifique cada alimento/prato, estimando a quantidade em gramas (peso cozido, exceto frutas em peso descascado).
+Responda SOMENTE com um JSON válido, sem texto antes ou depois, sem markdown, no formato exato:
+{"data":"AAAA-MM-DD","horario":"HH:MM","refeicao":"...","itens":[{"descricao":"...","quantidade_g":0,"energia_kcal_100g":0,"cho_100g":0,"ptn_100g":0,"lip_100g":0,"comentario":"Estimado por foto via IA"}]}
+Todos os campos de macro são por 100g. Use a data de hoje (${today}) se não houver indício de outra data.
+Infira a refeição pelo horário atual (${hhmm}): até 10:30 Café da manhã, 10:30–14:30 Almoço, 14:30–18:30 Lanche, 18:30–22:00 Jantar, após 22:00 Ceia.
+Se a quantidade for incerta, estime e registre a incerteza no campo comentario (ex.: '~150g ± 30g, estimado por foto').`;
+  if(extra) p += `\nObservação adicional do usuário: ${extra}`;
+  return p;
+}
+
+document.getElementById("btn-ai-identify").addEventListener("click", async ()=>{
+  const msgEl = document.getElementById("ai-identify-msg");
+  const cfg = getAiConfig();
+  if(!cfg || !cfg.key || !cfg.model){
+    msgEl.innerHTML = `<div class="msg err">Configure a chave e o modelo do Gemini em ⚙ antes de usar.</div>`;
+    return;
+  }
+  if(!aiSelectedPhoto){
+    msgEl.innerHTML = `<div class="msg err">Escolha uma foto primeiro.</div>`;
+    return;
+  }
+  msgEl.innerHTML = `<div class="msg ok">Identificando...</div>`;
+  try{
+    const base64 = await resizeImageToBase64(aiSelectedPhoto, 1280);
+    const extra = document.getElementById("ai-extra-instr").value.trim();
+    const prompt = buildAiPrompt(extra);
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.model)}:generateContent?key=${encodeURIComponent(cfg.key)}`, {
+      method: "POST",
+      headers: {"content-type":"application/json"},
+      body: JSON.stringify({
+        contents: [{
+          parts: [
+            { inline_data: { mime_type: "image/jpeg", data: base64 } },
+            { text: prompt }
+          ]
+        }]
+      })
+    });
+    if(!res.ok){
+      const errText = await res.text();
+      throw new Error(`Erro da API (${res.status}): ${errText.slice(0,200)}`);
+    }
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    if(!text) throw new Error("Resposta da IA veio vazia.");
+    let meal;
+    try{
+      meal = JSON.parse(text.trim().replace(/^```json\s*|```$/g,""));
+    }catch(e){
+      msgEl.innerHTML = `<div class="msg err">A IA não devolveu um JSON válido. Resposta bruta: ${text.replace(/</g,"&lt;")}</div>`;
+      return;
+    }
+    document.getElementById("f-json").value = JSON.stringify(meal, null, 2);
+    msgEl.innerHTML = `<div class="msg ok">Identificado — confira e edite antes de salvar.</div>`;
+    try{ renderPreview(parseMeal()); }catch(e){ /* usuário revisa manualmente */ }
+  }catch(e){
+    msgEl.innerHTML = `<div class="msg err">${e.message}</div>`;
+  }
+});
 
 document.getElementById("btn-save").addEventListener("click", async ()=>{
   try{
