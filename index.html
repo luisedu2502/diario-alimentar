@@ -339,7 +339,7 @@ let activeTab = "hoje";
 let registrarOpen = false;
 let configOpen = false;
 
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){ return toISO(new Date()); }
 const WEEKDAYS_SHORT = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 function fmtDate(iso){
   const [y,m,d] = iso.split("-").map(Number);
@@ -355,7 +355,7 @@ function mondayOf(d){
   return date;
 }
 function addDays(d,n){ const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function toISO(d){ return d.toISOString().slice(0,10); }
+function toISO(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function isoWeekInfo(date){
   const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
   const dayNum = (d.getUTCDay()+6)%7;
